@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speed Reading Chat - Gemini LLM</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preload" href="https://github.com/Born2Root/Fast-Font/raw/main/Fast_Sans.ttf" as="font" type="font/ttf" crossorigin>
+    <style>
+        @font-face {
+            font-family: 'Fast Sans';
+            src: url('https://github.com/Born2Root/Fast-Font/raw/main/Fast_Sans.ttf') format('truetype');
+            font-display: swap;
+        }
+        
+        .fast-font {
+            font-family: 'Fast Sans', sans-serif;
+            font-feature-settings: "calt" 1;
+        }
+        
+        .word-display {
+            font-size: 2.5rem;
+            line-height: 1.2;
+        }
+        
+        @media (max-width: 768px) {
+            .word-display {
+                font-size: 1.5rem;
+            }
+        }
+        
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+        }
+        
+        .chat-message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+        }
+        
+        .user-message {
+            background-color: #374151;
+            margin-left: 2rem;
+        }
+        
+        .assistant-message {
+            background-color: #1f2937;
+            margin-right: 2rem;
+        }
+        
+        .error-message {
+            background-color: #7f1d1d;
+            border-left: 4px solid #ef4444;
+        }
+        
+        .debug-panel {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .status-success { background-color: #10b981; }
+        .status-error { background-color: #ef4444; }
+        .status-loading { background-color: #f59e0b; }
+        .status-idle { background-color: #6b7280; }
+    </style>
+</head>
+<body class="bg-black text-white min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function SpeedReadingChat() {
+            const [apiKey, setApiKey] = useState('');
+            const [message, setMessage] = useState('');
+            const [chatHistory, setChatHistory] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [currentWord, setCurrentWord] = useState('');
+            const [wordIndex, setWordIndex] = useState(0);
+            const [currentSentence, setCurrentSentence] = useState([]);
+            const [sentenceIndex, setSentenceIndex] = useState(0);
+            const [isReading, setIsReading] = useState(false);
+            const [alignment, setAlignment] = useState('center');
+            const [wordDuration, setWordDuration] = useState(500);
+            const [showIntro, setShowIntro] = useState(true);
+            const [showDebug, setShowDebug] = useState(false);
+            const [debugLog, setDebugLog] = useState([]);
+            const [apiStatus, setApiStatus] = useState('idle');
+            const [lastApiResponse, setLastApiResponse] = useState(null);
+            const [lastApiError, setLastApiError] = useState(null);
+            const [isDemoMode, setIsDemoMode] = useState(false);
+            const [demoText, setDemoText] = useState('');
+            
+            const wordTimeoutRef = useRef(null);
+            const chatContainerRef = useRef(null);
+
+            const addDebugLog = (message, type = 'info') => {
+                const timestamp = new Date().toLocaleTimeString();
+                setDebugLog(prev => [...prev, { timestamp, message, type }]);
+            };
+
+            const testApiConnection = async () => {
+                if (!apiKey) {
+                    addDebugLog('No API key provided', 'error');
+                    return false;
+                }
+
+                setApiStatus('loading');
+                addDebugLog('Testing API connection...', 'info');
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: 'Hello'
+                                }]
+                            }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.ok && data.candidates) {
+                        setApiStatus('success');
+                        addDebugLog('API connection successful', 'success');
+                        setLastApiResponse(data);
+                        return true;
+                    } else {
+                        setApiStatus('error');
+                        setLastApiError(data);
+                        addDebugLog(`API Error: ${data.error?.message || 'Unknown error'}`, 'error');
+                        return false;
+                    }
+                } catch (error) {
+                    setApiStatus('error');
+                    setLastApiError({ error: { message: error.message } });
+                    addDebugLog(`Network Error: ${error.message}`, 'error');
+                    return false;
+                }
+            };
+
+            const calculateWordDuration = (word) => {
+                const baseDuration = 200;
+                const extraDuration = Math.max(0, word.length - 3) * 50;
+                return Math.min(Math.max(baseDuration + extraDuration, wordDuration), 1000);
+            };
+
+            const displayNextWord = () => {
+                if (wordIndex < currentSentence.length) {
+                    const word = currentSentence[wordIndex];
+                    setCurrentWord(word);
+                    const duration = calculateWordDuration(word);
+                    
+                    wordTimeoutRef.current = setTimeout(() => {
+                        setWordIndex(prev => prev + 1);
+                    }, duration);
+                } else {
+                    setIsReading(false);
+                    setCurrentWord('');
+                    setWordIndex(0);
+                }
+            };
+
+            useEffect(() => {
+                if (isReading && currentSentence.length > 0) {
+                    displayNextWord();
+                }
+                
+                return () => {
+                    if (wordTimeoutRef.current) {
+                        clearTimeout(wordTimeoutRef.current);
+                    }
+                };
+            }, [isReading, wordIndex, currentSentence, wordDuration]);
+
+            useEffect(() => {
+                if (chatContainerRef.current) {
+                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                }
+            }, [chatHistory]);
+
+            const sendMessage = async () => {
+                if (!message.trim()) {
+                    addDebugLog('Message is empty', 'error');
+                    return;
+                }
+                
+                const userMessage = { role: 'user', content: message };
+                setChatHistory(prev => [...prev, userMessage]);
+                setMessage('');
+                setIsLoading(true);
+                addDebugLog(`Sending message: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`, 'info');
+
+                if (isDemoMode) {
+                    // Demo mode - use sample text
+                    setTimeout(() => {
+                        const sampleTexts = getSampleTexts();
+                        const randomText = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+                        const assistantMessage = { role: 'assistant', content: randomText.text };
+                        setChatHistory(prev => [...prev, assistantMessage]);
+                        setApiStatus('success');
+                        
+                        addDebugLog(`Demo response: ${randomText.title}`, 'success');
+                        
+                        // Split response into sentences for speed reading
+                        const sentences = randomText.text.split(/[.!?]+/).filter(s => s.trim());
+                        setCurrentSentence(sentences);
+                        setSentenceIndex(0);
+                        setIsReading(true);
+                        addDebugLog(`Split into ${sentences.length} sentences for speed reading`, 'info');
+                        setIsLoading(false);
+                    }, 1000); // Simulate API delay
+                } else {
+                    // API mode
+                    if (!apiKey) {
+                        addDebugLog('API key missing', 'error');
+                        setIsLoading(false);
+                        return;
+                    }
+                    
+                    setApiStatus('loading');
+                    
+                    try {
+                        const requestBody = {
+                            contents: [{
+                                parts: [{
+                                    text: message
+                                }]
+                            }]
+                        };
+
+                        addDebugLog(`Request URL: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`, 'info');
+                        addDebugLog(`Request body: ${JSON.stringify(requestBody, null, 2)}`, 'info');
+
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(requestBody)
+                        });
+
+                        addDebugLog(`Response status: ${response.status} ${response.statusText}`, 'info');
+
+                        const data = await response.json();
+                        setLastApiResponse(data);
+                        
+                        if (response.ok && data.candidates && data.candidates[0] && data.candidates[0].content) {
+                            const assistantResponse = data.candidates[0].content.parts[0].text;
+                            const assistantMessage = { role: 'assistant', content: assistantResponse };
+                            setChatHistory(prev => [...prev, assistantMessage]);
+                            setApiStatus('success');
+                            
+                            addDebugLog(`Response received: ${assistantResponse.substring(0, 100)}${assistantResponse.length > 100 ? '...' : ''}`, 'success');
+                            
+                            // Split response into sentences for speed reading
+                            const sentences = assistantResponse.split(/[.!?]+/).filter(s => s.trim());
+                            setCurrentSentence(sentences);
+                            setSentenceIndex(0);
+                            setIsReading(true);
+                            addDebugLog(`Split into ${sentences.length} sentences for speed reading`, 'info');
+                        } else {
+                            setApiStatus('error');
+                            setLastApiError(data);
+                            const errorMsg = data.error?.message || 'Invalid response from API';
+                            addDebugLog(`API Error: ${errorMsg}`, 'error');
+                            addDebugLog(`Full error response: ${JSON.stringify(data, null, 2)}`, 'error');
+                            
+                            const errorMessage = { role: 'assistant', content: `Error: ${errorMsg}. Please check your API key and try again.` };
+                            setChatHistory(prev => [...prev, errorMessage]);
+                        }
+                    } catch (error) {
+                        setApiStatus('error');
+                        setLastApiError({ error: { message: error.message } });
+                        addDebugLog(`Network Error: ${error.message}`, 'error');
+                        addDebugLog(`Error stack: ${error.stack}`, 'error');
+                        
+                        const errorMessage = { role: 'assistant', content: `Network Error: ${error.message}. Please check your internet connection and try again.` };
+                        setChatHistory(prev => [...prev, errorMessage]);
+                    } finally {
+                        setIsLoading(false);
+                    }
+                }
+            };
+
+            const handleNextSentence = () => {
+                if (sentenceIndex < currentSentence.length - 1) {
+                    setSentenceIndex(prev => prev + 1);
+                    setWordIndex(0);
+                    setIsReading(true);
+                    addDebugLog(`Moving to sentence ${sentenceIndex + 2}/${currentSentence.length}`, 'info');
+                } else {
+                    setCurrentSentence([]);
+                    setSentenceIndex(0);
+                    setWordIndex(0);
+                    setIsReading(false);
+                    addDebugLog('Finished reading all sentences', 'info');
+                }
+            };
+
+            const handleKeyPress = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            };
+
+            const clearDebugLog = () => {
+                setDebugLog([]);
+                addDebugLog('Debug log cleared', 'info');
+            };
+
+            const getSampleTexts = () => [
+                {
+                    title: "Short Story",
+                    text: "The quick brown fox jumps over the lazy dog. This pangram contains every letter of the alphabet at least once. Speed reading can help you process information faster and more efficiently. Practice makes perfect when it comes to improving your reading speed."
+                },
+                {
+                    title: "Technical Article",
+                    text: "Speed reading is a technique used to improve one's ability to read quickly. The method involves eliminating subvocalization and increasing the number of words processed per fixation. Research shows that the average reader processes 200-400 words per minute, while speed readers can achieve 1000+ words per minute. This improvement comes from reducing eye movements and expanding peripheral vision."
+                },
+                {
+                    title: "Longer Passage",
+                    text: "The art of speed reading has evolved significantly over the past century. Early techniques focused on rapid eye movement training, while modern approaches incorporate cognitive psychology and neuroscience. Studies have shown that speed reading can improve comprehension when combined with proper techniques. The key is to maintain focus while processing multiple words simultaneously. Regular practice is essential for developing this skill. Many successful people attribute their productivity to speed reading abilities."
+                }
+            ];
+
+            const getCommonErrors = () => [
+                {
+                    title: "API Key Issues",
+                    solutions: [
+                        "Make sure your API key is correct and not expired",
+                        "Check that you're using the right API key from Google AI Studio",
+                        "Ensure the API key has proper permissions for Gemini API"
+                    ]
+                },
+                {
+                    title: "Network Issues",
+                    solutions: [
+                        "Check your internet connection",
+                        "Try refreshing the page",
+                        "Check if your firewall is blocking the request"
+                    ]
+                },
+                {
+                    title: "CORS Issues",
+                    solutions: [
+                        "The app should work fine on Render's domains",
+                        "If testing locally, try using a different browser",
+                        "Check browser console for CORS errors"
+                    ]
+                },
+                {
+                    title: "Rate Limiting",
+                    solutions: [
+                        "Wait a few minutes before trying again",
+                        "Check your Google AI Studio quota usage",
+                        "Consider upgrading your API plan if needed"
+                    ]
+                }
+            ];
+
+            if (showIntro) {
+                return (
+                    <div className="min-h-screen bg-black text-white p-4">
+                        <div className="max-w-4xl mx-auto">
+                            <h1 className="text-4xl font-bold text-center mb-8">Speed Reading Chat</h1>
+                            
+                            <div className="bg-gray-900 p-6 rounded-lg mb-6">
+                                <h2 className="text-2xl font-semibold mb-4">How to Use</h2>
+                                <ul className="space-y-2 text-gray-300">
+                                    <li>• Enter your Gemini API key in the field below</li>
+                                    <li>• Type your message and press Enter to send</li>
+                                    <li>• The AI response will be displayed word by word for speed reading</li>
+                                    <li>• Adjust the word duration slider to control reading speed</li>
+                                    <li>• Choose text alignment (left, center, right)</li>
+                                    <li>• Click "Next" to continue to the next sentence</li>
+                                </ul>
+                            </div>
+
+                            <div className="bg-gray-900 p-6 rounded-lg mb-6">
+                                <h3 className="text-xl font-semibold mb-3">Choose Mode</h3>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                    <div className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                                        isDemoMode ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 hover:border-gray-500'
+                                    }`} onClick={() => setIsDemoMode(true)}>
+                                        <h4 className="text-lg font-semibold mb-2">🎯 Demo Mode</h4>
+                                        <p className="text-sm text-gray-300">Test the speed reading functionality with sample texts. No API key required.</p>
+                                    </div>
+                                    
+                                    <div className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
+                                        !isDemoMode ? 'border-blue-500 bg-blue-900/20' : 'border-gray-600 hover:border-gray-500'
+                                    }`} onClick={() => setIsDemoMode(false)}>
+                                        <h4 className="text-lg font-semibold mb-2">🤖 API Mode</h4>
+                                        <p className="text-sm text-gray-300">Use the Gemini LLM API for real conversations. Requires API key.</p>
+                                    </div>
+                                </div>
+
+                                {isDemoMode ? (
+                                    <div className="bg-blue-900/20 p-4 rounded-lg border border-blue-500">
+                                        <h4 className="font-semibold mb-3">Demo Mode Active</h4>
+                                        <p className="text-sm text-gray-300 mb-3">You can now test the speed reading functionality with sample texts. Just type any message and you'll get a random sample response to practice with.</p>
+                                        <div className="text-sm">
+                                            <div className="font-semibold mb-2">Sample texts include:</div>
+                                            <ul className="space-y-1 text-gray-300">
+                                                {getSampleTexts().map((sample, index) => (
+                                                    <li key={index}>• {sample.title}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <p className="text-gray-300 mb-4">
+                                            Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Google AI Studio</a>
+                                        </p>
+                                        <div className="flex gap-2 mb-4">
+                                            <input
+                                                type="password"
+                                                placeholder="YOUR_GEMINI_API_KEY"
+                                                value={apiKey}
+                                                onChange={(e) => setApiKey(e.target.value)}
+                                                className="flex-1 p-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400"
+                                            />
+                                            <button
+                                                onClick={testApiConnection}
+                                                disabled={!apiKey}
+                                                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+                                            >
+                                                Test API
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`status-indicator status-${apiStatus}`}></span>
+                                            <span className="text-sm">
+                                                {apiStatus === 'idle' && 'Ready to test'}
+                                                {apiStatus === 'loading' && 'Testing connection...'}
+                                                {apiStatus === 'success' && 'API connection successful!'}
+                                                {apiStatus === 'error' && 'API connection failed'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="text-center">
+                                <button
+                                    onClick={() => setShowIntro(false)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                                >
+                                    Start Chatting
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-black text-white p-4">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-2xl font-bold">Speed Reading Chat</h1>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setShowDebug(!showDebug)}
+                                    className="text-gray-400 hover:text-white px-3 py-1 rounded border border-gray-600"
+                                >
+                                    {showDebug ? 'Hide' : 'Show'} Debug
+                                </button>
+                                <button
+                                    onClick={() => setShowIntro(true)}
+                                    className="text-gray-400 hover:text-white"
+                                >
+                                    Help
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Debug Panel */}
+                        {showDebug && (
+                            <div className="bg-gray-900 p-4 rounded-lg mb-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-semibold">Debug Panel</h3>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={testApiConnection}
+                                            className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1 rounded"
+                                        >
+                                            Test API
+                                        </button>
+                                        <button
+                                            onClick={clearDebugLog}
+                                            className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded"
+                                        >
+                                            Clear Log
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div>
+                                        <h4 className="font-semibold mb-2">Debug Log</h4>
+                                        <div className="debug-panel bg-gray-800 p-3 rounded text-xs">
+                                            {debugLog.map((log, index) => (
+                                                <div key={index} className={`mb-1 ${
+                                                    log.type === 'error' ? 'text-red-400' :
+                                                    log.type === 'success' ? 'text-green-400' :
+                                                    'text-gray-300'
+                                                }`}>
+                                                    [{log.timestamp}] {log.message}
+                                                </div>
+                                            ))}
+                                            {debugLog.length === 0 && (
+                                                <div className="text-gray-500">No debug messages yet</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <h4 className="font-semibold mb-2">API Status</h4>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`status-indicator status-${apiStatus}`}></span>
+                                                <span className="text-sm">Status: {apiStatus}</span>
+                                            </div>
+                                            
+                                            {lastApiError && (
+                                                <div className="bg-red-900 p-3 rounded text-xs">
+                                                    <div className="font-semibold text-red-300 mb-1">Last Error:</div>
+                                                    <pre className="whitespace-pre-wrap">{JSON.stringify(lastApiError, null, 2)}</pre>
+                                                </div>
+                                            )}
+                                            
+                                            {lastApiResponse && (
+                                                <div className="bg-green-900 p-3 rounded text-xs">
+                                                    <div className="font-semibold text-green-300 mb-1">Last Response:</div>
+                                                    <pre className="whitespace-pre-wrap">{JSON.stringify(lastApiResponse, null, 2)}</pre>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-4">
+                                    <h4 className="font-semibold mb-2">Common Issues & Solutions</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {getCommonErrors().map((error, index) => (
+                                            <div key={index} className="bg-gray-800 p-3 rounded">
+                                                <div className="font-semibold text-yellow-400 mb-2">{error.title}</div>
+                                                <ul className="text-xs space-y-1">
+                                                    {error.solutions.map((solution, solIndex) => (
+                                                        <li key={solIndex} className="text-gray-300">• {solution}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Word Display Area */}
+                        {isReading && (
+                            <div className={`bg-gray-900 p-8 rounded-lg mb-6 min-h-[200px] flex items-center justify-${alignment === 'left' ? 'start' : alignment === 'right' ? 'end' : 'center'}`}>
+                                <div className={`fast-font word-display ${alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center'}`}>
+                                    {currentWord}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Controls */}
+                        <div className="bg-gray-900 p-4 rounded-lg mb-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Text Alignment</label>
+                                    <select
+                                        value={alignment}
+                                        onChange={(e) => setAlignment(e.target.value)}
+                                        className="w-full p-2 bg-gray-800 border border-gray-600 rounded text-white"
+                                    >
+                                        <option value="left">Left</option>
+                                        <option value="center">Center</option>
+                                        <option value="right">Right</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Word Duration: {wordDuration}ms</label>
+                                    <input
+                                        type="range"
+                                        min="100"
+                                        max="1000"
+                                        value={wordDuration}
+                                        onChange={(e) => setWordDuration(parseInt(e.target.value))}
+                                        className="w-full"
+                                    />
+                                </div>
+                                
+                                {isReading && (
+                                    <div className="flex items-end">
+                                        <button
+                                            onClick={handleNextSentence}
+                                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                                        >
+                                            Next Sentence
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Chat Input */}
+                        <div className="bg-gray-900 p-4 rounded-lg mb-6">
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={message}
+                                    onChange={(e) => setMessage(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    placeholder={isDemoMode ? "Type anything to get a sample text..." : "Type your message..."}
+                                    disabled={isLoading}
+                                    className="flex-1 p-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 disabled:opacity-50"
+                                />
+                                <button
+                                    onClick={sendMessage}
+                                    disabled={isLoading || !message.trim() || (!isDemoMode && !apiKey)}
+                                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                                >
+                                    {isLoading ? 'Sending...' : 'Send'}
+                                </button>
+                            </div>
+                            {isDemoMode && (
+                                <div className="mt-2 text-sm text-gray-400">
+                                    🎯 Demo mode: You'll get random sample texts to practice speed reading
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chat History */}
+                        <div className="bg-gray-900 p-4 rounded-lg">
+                            <h3 className="text-lg font-semibold mb-4">Chat History</h3>
+                            <div ref={chatContainerRef} className="chat-container">
+                                {chatHistory.map((msg, index) => (
+                                    <div
+                                        key={index}
+                                        className={`chat-message ${
+                                            msg.role === 'user' ? 'user-message' : 
+                                            msg.content.startsWith('Error:') ? 'error-message' : 'assistant-message'
+                                        }`}
+                                    >
+                                        <div className="font-semibold mb-1">
+                                            {msg.role === 'user' ? 'You' : 'Assistant'}
+                                        </div>
+                                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<SpeedReadingChat />, document.getElementById('root'));
+    </script>
+</body>
+</html> 
