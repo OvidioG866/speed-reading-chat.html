@@ -4,22 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speed Reading Chat - Dante's Inferno (v2)</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Using Tailwind CDN for single HTML file - acceptable for this use case -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         
         .word-display {
-            font-size: 2.5rem;
+            font-size: 2rem;
             line-height: 1.2;
             font-family: 'Arial', sans-serif;
         }
         
         .word-display strong {
-            font-weight: 900 !important;
-            color: #ffff00 !important;
-            text-shadow: 0 0 5px #ffff00;
+            font-weight: 800 !important;
+            color: #f59e0b !important;
         }
         
         @media (max-width: 768px) {
@@ -81,6 +81,28 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        function ErrorBoundary({ children }) {
+            const [hasError, setHasError] = useState(false);
+            
+            if (hasError) {
+                return (
+                    <div className="min-h-screen bg-black text-white p-4 flex items-center justify-center">
+                        <div className="text-center">
+                            <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+                            <button 
+                                onClick={() => window.location.reload()} 
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded"
+                            >
+                                Reload Page
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+            
+            return children;
+        }
+
         function SpeedReadingChat() {
             const [apiKey, setApiKey] = useState('');
             const [message, setMessage] = useState('');
@@ -91,8 +113,8 @@
             const [currentSentence, setCurrentSentence] = useState([]);
             const [sentenceIndex, setSentenceIndex] = useState(0);
             const [isReading, setIsReading] = useState(false);
-            const [alignment, setAlignment] = useState('center');
-            const [wordDuration, setWordDuration] = useState(500);
+            const [alignment, setAlignment] = useState('left');
+            const [wordDuration, setWordDuration] = useState(200);
             const [showIntro, setShowIntro] = useState(false);
             const [showDebug, setShowDebug] = useState(false);
             const [debugLog, setDebugLog] = useState([]);
@@ -156,6 +178,16 @@
             };
 
             const calculateWordDuration = (word) => {
+                // Check if this is a combined word (contains space)
+                if (word.includes(' ')) {
+                    const words = word.split(' ');
+                    let totalDuration = 0;
+                    for (const singleWord of words) {
+                        totalDuration += calculateWordDuration(singleWord);
+                    }
+                    return totalDuration;
+                }
+                
                 // Base duration per character (from slider)
                 const baseDurationPerChar = wordDuration / 5; // Normalize to 5 characters
                 
@@ -165,50 +197,64 @@
                 // Add extra pause for punctuation
                 let punctuationPause = 0;
                 if (word.match(/[.!?]/)) {
-                    punctuationPause = 500; // 500ms extra for sentence endings
+                    punctuationPause = 1000; // 1000ms extra for sentence endings
                 } else if (word.match(/[,;]/)) {
-                    punctuationPause = 300; // 300ms extra for commas and semicolons
+                    punctuationPause = 600; // 600ms extra for commas and semicolons
                 } else if (word.match(/[:'"()]/)) {
-                    punctuationPause = 200; // 200ms extra for other punctuation
+                    punctuationPause = 400; // 400ms extra for other punctuation
                 }
                 
                 return duration + punctuationPause;
             };
 
             const applyFixation = (word) => {
-                const length = word.length;
-                let boldCount = 0;
-                
-                if (length <= 3) {
-                    boldCount = 1;
-                } else if (length === 4) {
-                    boldCount = 2;
-                } else {
-                    boldCount = Math.ceil(length * 0.4); // 40% of letters
-                }
-                
-                // Calculate which letters to bold (center-weighted)
-                const startIndex = Math.floor((length - boldCount) / 2);
-                const boldIndices = [];
-                
-                for (let i = 0; i < boldCount; i++) {
-                    boldIndices.push(startIndex + i);
-                }
-                
-                // Apply bold formatting
-                let result = '';
-                for (let i = 0; i < length; i++) {
-                    if (boldIndices.includes(i)) {
-                        result += `<strong>${word[i]}</strong>`;
-                    } else {
-                        result += word[i];
+                try {
+                    if (!word || typeof word !== 'string') {
+                        return word || '';
                     }
+                    
+                    // Check if this is a combined word (contains space)
+                    if (word.includes(' ')) {
+                        const words = word.split(' ');
+                        return words.map(singleWord => applyFixation(singleWord)).join(' ');
+                    }
+                    
+                    const length = word.length;
+                    let boldCount = 0;
+                    
+                    if (length <= 3) {
+                        boldCount = 1;
+                    } else if (length === 4) {
+                        boldCount = 2;
+                    } else if (length === 5) {
+                        boldCount = 2;
+                    } else if (length === 6) {
+                        boldCount = 3;
+                    } else if (length > 6) {
+                        boldCount = 4;
+                    } 
+                    
+                    // Calculate which letters to bold
+                    let boldIndices = [];
+                    for (let i = 0; i < boldCount; i++) {
+                        boldIndices.push(i);
+                    }
+                    
+                    // Apply bold formatting
+                    let result = '';
+                    for (let i = 0; i < length; i++) {
+                        if (boldIndices.includes(i)) {
+                            result += `<strong>${word[i]}</strong>`;
+                        } else {
+                            result += word[i];
+                        }
+                    }
+                    
+                    return result;
+                } catch (error) {
+                    console.error('Error in applyFixation:', error);
+                    return word || '';
                 }
-                
-                // Debug logging
-                addDebugLog(`Fixation: "${word}" -> ${boldCount} bold letters at positions ${boldIndices.join(',')}`, 'info');
-                
-                return result;
             };
 
             const displayNextWord = () => {
@@ -216,16 +262,56 @@
                     const currentSentenceText = currentSentence[sentenceIndex];
                     const words = currentSentenceText.split(/\s+/).filter(word => word.trim());
                     
+                    // Debug: Log all words in current sentence
+                    if (wordIndex === 0) {
+                        addDebugLog(`Sentence words: [${words.map(w => `"${w}"`).join(', ')}]`, 'info');
+                    }
+                    
                     if (wordIndex < words.length) {
-                        const word = words[wordIndex];
-                        setCurrentWord(word);
-                        const duration = calculateWordDuration(word);
+                        let word = words[wordIndex];
+                        let combinedWord = word;
+                        let skipNext = false;
+                        
+                        addDebugLog(`Processing word ${wordIndex}: "${word}"`, 'info');
+                        
+                        // Check if current word is just punctuation
+                        if (word.match(/^[.!?,;:'"()]+$/)) {
+                            addDebugLog(`Found punctuation: "${word}"`, 'info');
+                            // If it's punctuation, combine with previous word
+                            if (wordIndex > 0) {
+                                const prevWord = words[wordIndex - 1];
+                                combinedWord = prevWord + word;
+                                // We need to go back and update the previous display
+                                setCurrentWord(combinedWord);
+                                const duration = calculateWordDuration(combinedWord);
+                                addDebugLog(`Combined punctuation: "${prevWord}" + "${word}" = "${combinedWord}"`, 'info');
+                                
+                                wordTimeoutRef.current = setTimeout(() => {
+                                    setWordIndex(prev => prev + 1);
+                                }, duration);
+                                return;
+                            }
+                        }
+                        
+                        // Combine 1-2 character words with the next word (but not if next is punctuation)
+                        if (word.length <= 2 && wordIndex + 1 < words.length) {
+                            const nextWord = words[wordIndex + 1];
+                            // Don't combine if next word is just punctuation
+                            if (!nextWord.match(/^[.!?,;:'"()]+$/)) {
+                                combinedWord = word + ' ' + nextWord;
+                                skipNext = true;
+                                addDebugLog(`Combined: "${word}" + "${nextWord}" = "${combinedWord}"`, 'info');
+                            }
+                        }
+                        
+                        setCurrentWord(combinedWord);
+                        const duration = calculateWordDuration(combinedWord);
                         
                         // Debug logging
-                        addDebugLog(`Word: "${word}" (${word.length} chars) - Duration: ${duration}ms`, 'info');
+                        addDebugLog(`Word: "${combinedWord}" (${combinedWord.length} chars) - Duration: ${duration}ms`, 'info');
                         
                         wordTimeoutRef.current = setTimeout(() => {
-                            setWordIndex(prev => prev + 1);
+                            setWordIndex(prev => prev + (skipNext ? 2 : 1));
                         }, duration);
                     } else {
                         // Move to next sentence
@@ -256,7 +342,7 @@
                         clearTimeout(wordTimeoutRef.current);
                     }
                 };
-            }, [isReading, wordIndex, sentenceIndex, currentSentence, wordDuration]);
+            }, [isReading, wordIndex, sentenceIndex, currentSentence]);
 
             useEffect(() => {
                 if (chatContainerRef.current) {
@@ -270,12 +356,12 @@
                     const sampleTexts = getSampleTexts();
                     const danteText = sampleTexts[0].text;
                     
-                    // Split into sentences for speed reading
-                    const sentences = danteText.split(/[.!?]+/).filter(s => s.trim());
+                    // Split into sentences for speed reading, but keep punctuation with words
+                    const sentences = danteText.split(/(?<=[.!?])\s+/).filter(s => s.trim());
                     setCurrentSentence(sentences);
                     setSentenceIndex(0);
                     setIsReading(true);
-                    addDebugLog(`Started reading Dante's Inferno - ${sentences.length} sentences`, 'success');
+                    addDebugLog(`Started reading Il Sentiero dei Nidi di Ragno - ${sentences.length} sentences`, 'success');
                 };
 
                 // Start reading after component mount
@@ -309,7 +395,7 @@
                         addDebugLog(`Demo response: ${randomText.title}`, 'success');
                         
                         // Split response into sentences for speed reading
-                        const sentences = randomText.text.split(/[.!?]+/).filter(s => s.trim());
+                        const sentences = randomText.text.split(/([.!?]+)/).filter(s => s.trim());
                         setCurrentSentence(sentences);
                         setSentenceIndex(0);
                         setIsReading(true);
@@ -360,7 +446,7 @@
                             addDebugLog(`Response received: ${assistantResponse.substring(0, 100)}${assistantResponse.length > 100 ? '...' : ''}`, 'success');
                             
                             // Split response into sentences for speed reading
-                            const sentences = assistantResponse.split(/[.!?]+/).filter(s => s.trim());
+                            const sentences = assistantResponse.split(/([.!?]+)/).filter(s => s.trim());
                             setCurrentSentence(sentences);
                             setSentenceIndex(0);
                             setIsReading(true);
@@ -432,8 +518,8 @@
 
             const getSampleTexts = () => [
                 {
-                    title: "Dante's Inferno",
-                    text: "Nel mezzo del cammin di nostra vita mi ritrovai per una selva oscura, ché la diritta via era smarrita. Ahi quanto a dir qual era è cosa dura esta selva selvaggia e aspra e forte che nel pensier rinova la paura! Tant' è amara che poco è più morte; ma per trattar del ben ch'i' vi trovai, dirò de l'altre cose ch'i' v'ho scorte. Io non so ben ridir com' i' v'intrai, tant' era pien di sonno a quel punto che la verace via abbandonai. Ma poi ch'i' fui al piè d'un colle giunto, là dove terminava quella valle che m'avea di paura il cor compunto, guardai in alto e vidi le sue spalle vestite già de' raggi del pianeta che mena dritto altrui per ogne calle. Allor fu la paura un poco queta, che nel lago del cor m'era durata la notte ch'i' passai con tanta pieta. E come quei che con lena affannata, uscito fuor del pelago a la riva, si volge a l'acqua perigliosa e guata, così l'animo mio, ch'ancor fuggiva, si volse a retro a rimirar lo passo che non lasciò già mai persona viva. Poi ch'èi posato un poco il corpo lasso, ripresi via per la piaggia diserta, sì che 'l piè fermo sempre era 'l più basso. Ed ecco, quasi al cominciar de l'erta, una lonza leggera e presta molto, che di pel macolato era coverta; e non mi si partia dinanzi al volto, anzi 'mpediva tanto il mio cammino, ch'i' fui per ritornar più volte vòlto. Temp' era dal principio del mattino, e 'l sol montava 'n sù con quelle stelle ch'eran con lui quando l'amor divino mosse di prima quelle cose belle; sì ch'a bene sperar m'era cagione di quella fiera a la gaetta pelle l'ora del tempo e la dolce stagione; ma non sì che paura non mi desse la vista che m'apparve d'un leone. Questi parea che contra me venisse con la test' alta e con rabbiosa fame, sì che parea che l'aere ne tremesse. Ed una lupa, che di tutte brame sembiava carca ne la sua magrezza, e molte genti fé già viver grame, questa mi porse tanto di gravezza con la paura ch'uscia di sua vista, ch'io perdei la speranza de l'altezza. E qual è quei che volontieri acquista, e giugne 'l tempo che perder lo face, che 'n tutti suoi pensier piange e s'attrista; tal mi fece la bestia sanza pace, che, venendomi 'ncontro, a poco a poco mi ripigneva là dove 'l sol tace. Mentre ch'i' rovinava in basso loco, dinanzi a li occhi mi si fu offerto chi per lungo silenzio parea fioco. Quando vidi costui nel gran deserto, «Miserere di me», gridai a lui, «qual che tu sii, od ombra od omo certo!». Rispuosemi: «Non omo, omo già fui, e li parenti miei furon lombardi, mantoani per patrïa ambedui. Nacqui sub Iulio, ancor che fosse tardi, e vissi a Roma sotto 'l buono Augusto nel tempo de li dèi falsi e bugiardi. Poeta fui, e cantai di quel giusto figliuol d'Anchise che venne di Troia, poi che 'l superbo Ilïón fu combusto. Ma tu perché ritorni a tanta noia? perché non sali il dilettoso monte ch'è principio e cagion di tutta gioia?». «Or se' tu quel Virgilio e quella fonte che spandi di parlar sì largo fiume?», rispuos' io lui con vergognosa fronte. «O de li altri poeti onore e lume, vagliami 'l lungo studio e 'l grande amore che m'ha fatto cercar lo tuo volume. Tu se' lo mio maestro e 'l mio autore, tu se' solo colui da cu' io tolsi lo bello stilo che m'ha fatto onore. Vedi la bestia per cu' io mi volsi; aiutami da lei, famoso saggio, ch'ella mi fa tremar le vene e i polsi». «A te convien tenere altro vïaggio», rispuose, poi che lagrimar mi vide, «se vuo' campar d'esto loco selvaggio; ché questa bestia, per la qual tu gride, non lascia altrui passar per la sua via, ma tanto lo 'mpedisce che l'uccide; e ha natura sì malvagia e ria, che mai non empie la bramosa voglia, e dopo 'l pasto ha più fame che pria. Molti son li animali a cui s'ammoglia, e più saranno ancora, infin che 'l veltro verrà, che la farà morir con doglia. Questi non ciberà terra né peltro, ma sapïenza, amore e virtute, e sua nazion sarà tra feltro e feltro. Di quella umile Italia fia salute per cui morì la vergine Cammilla, Eurialo e Turno e Niso di ferute. Questi la caccerà per ogne villa, fin che l'avrà rimessa ne lo 'nferno, là onde 'nvidia prima dipartilla. Ond' io per lo tuo me' penso e discerno che tu mi segui, e io sarò tua guida, e trarrotti di qui per loco etterno; ove udirai le disperate strida, vedrai li antichi spiriti dolenti, ch'a la seconda morte ciascun grida; e vederai color che son contenti nel foco, perché speran di venire quando che sia a le beate genti. A le quai poi se tu vorrai salire, anima fia a ciò più di me degna: con lei ti lascerò nel mio partire; ché quello imperador che là sù regna, perch' i' fu' ribellante a la sua legge, non vuol che 'n sua città per me si vegna. In tutte parti impera e quivi regge; quivi è la sua città e l'alto seggio: oh felice colui cu' ivi elegge!». E io a lui: «Poeta, io ti richeggio per quello Dio che tu non conoscesti, acciò ch'io fugga questo male e peggio, che tu mi meni là dov' or dicesti, sì ch'io veggia la porta di san Pietro e color cui tu fai cotanto mesti». Allor si mosse, e io li tenni dietro. Inferno Canto II Lo giorno se n'andava, e l'aere bruno toglieva li animai che sono in terra da le fatiche loro; e io sol uno m'apparecchiava a sostener la guerra sì del cammino e sì de la pietate, che ritrarrà la mente che non erra. O muse, o alto ingegno, or m'aiutate; o mente che scrivesti ciò ch'io vidi, qui si parrà la tua nobilitate. Io cominciai: «Poeta che mi guidi, guarda la mia virtù s'ell' è possente, prima ch'a l'alto passo tu mi fidi. Tu dici che di Silvïo il parente, corruttibile ancora, ad immortale secolo andò, e fu sensibilmente. Però, se l'avversario d'ogne male cortese i fu, pensando l'alto effetto ch'uscir dovea di lui, e 'l chi e 'l quale non pare indegno ad omo d'intelletto; ch'e' fu de l'alma Roma e di suo impero ne l'empireo ciel per padre eletto: la quale e 'l quale, a voler dir lo vero, fu stabilita per lo loco santo u' siede il successor del maggior Piero. Per quest' andata onde li dai tu vanto, intese cose che furon cagione di sua vittoria e del papale ammanto. Andovvi poi lo Vas d'elezïone, per recarne conforto a quella fede ch'è principio a la via di salvazione. Ma io, perché venirvi? o chi 'l concede? Io non Enëa, io non Paulo sono; me degno a ciò né io né altri 'l crede. Per che, se del venire io m'abbandono, temo che la venuta non sia folle. Se' savio; intendi me' ch'i' non ragiono». E qual è quei che disvuol ciò che volle e per novi pensier cangia proposta, sì che dal cominciar tutto si tolle, tal mi fec' ïo 'n quella oscura costa, perché, pensando, consumai la 'mpresa che fu nel cominciar cotanto tosta. «S'i' ho ben la parola tua intesa», rispuose del magnanimo quell' ombra, «l'anima tua è da viltade offesa; la qual molte fïate l'omo ingombra sì che d'onrata impresa lo rivolve, come falso veder bestia quand' ombra. Da questa tema acciò che tu ti solve, dirottiperch' io venni e quel ch'io 'ntesi nel primo punto che di te mi dolve. Io era tra color che son sospesi, e donna mi chiamò beata e bella, tal che di comandare io la richiesi. Lucevan li occhi suoi più che la stella; e cominciommi a dir soave e piana, con angelica voce, in sua favella: \"O anima cortese mantoana, di cui la fama ancor nel mondo dura, e durerà quanto 'l mondo lontana, l'amico mio, e non de la ventura, ne la diserta piaggia è impedito sì nel cammin, che vòlt' è per paura; e temo che non sia già sì smarrito, ch'io mi sia tardi al soccorso levata, per quel ch'i' ho di lui nel cielo udito. Or movi, e con la tua parola ornata e con ciò c'ha mestieri al suo campare, l'aiuta sì ch'i' ne sia consolata. I' son Beatrice che ti faccio andare; vegno del loco ove tornar disio; amor mi mosse, che mi fa parlare. Quando sarò dinanzi al segnor mio, di te mi loderò sovente a lui\". Tacette allora, e poi comincia' io: \"O donna di virtù sola per cui l'umana spezie eccede ogne contento di quel ciel c'ha minor li cerchi sui, tanto m'aggrada il tuo comandamento, che l'ubidir, se già fosse, m'è tardi; più non t'è uo' ch'aprirmi il tuo talento. Ma dimmi la cagion che non ti guardi de lo scender qua giuso in questo centro de l'ampio loco ove tornar tu ardi\". \"Da che tu vuo' saver cotanto a dentro, dirottibrievemente\", mi rispuose, \"perch' i' non temo di venir qua entro. Temer si dee di sole quelle cose c'hanno potenza di fare altrui male; de l'altre no, ché non son paurose. I' son fatta da Dio, sua mercé, tale, che la vostra miseria non mi tange, né fiamma d'esto 'ncendio non m'assale. Donna è gentil nel ciel che si compiange di questo 'mpedimento ov' io ti mando, sì che duro giudicio là sù frange. Questa chiese Lucia in suo dimando e disse:—Or ha bisogno il tuo fedele di te, e io a te lo raccomando—. Lucia, nimica di ciascun crudele, si mosse, e venne al loco dov' i' era, che mi sedea con l'antica Rachele. Disse:—Beatrice, loda di Dio vera, ché non soccorri quei che t'amò tanto, ch'uscì per te de la volgare schiera? Non odi tu la pieta del suo pianto, non vedi tu la morte che 'l combatte su la fiumana ove 'l mar non ha vanto?—. Al mondo non fur mai persone ratte a far lor pro o a fuggir lor danno, com' io, dopo cotai parole fatte, venni qua giù del mio beato scanno, fidandomi del tuo parlare onesto, ch'onora te e quei ch'udito l'hanno\". Poscia che m'ebbe ragionato questo, li occhi lucenti lagrimando volse, per che mi fece del venir più presto. E venni a te così com' ella volse: d'inanzi a quella fiera ti levai che del bel monte il corto andar ti tolse. Dunque: che è? perché, perché restai, perché tanta viltà nel core allette, perché ardire e franchezza non hai, poscia che tai tre donne benedette curan di te ne la corte del cielo, e 'l mio parlar tanto ben ti promette?». Quali fioretti dal notturno gelo chinati e chiusi, poi che 'l sol li 'mbianca, si drizzan tutti aperti in loro stelo, tal mi fec' io di mia virtude stanca, e tanto buono ardire al cor mi corse, ch'i' cominciai come persona franca: «Oh pietosa colei che mi soccorse! e te cortese ch'ubidisti tosto a le vere parole che ti porse! Tu m'hai con disiderio il cor disposto sì al venir con le parole tue, ch'i' son tornato nel primo proposto. Or va, ch'un sol volere è d'ambedue: tu duca, tu segnore e tu maestro». Così li dissi; e poi che mosso fue, intrai per lo cammino alto e silvestro."
+                    title: "Il Sentiero dei Nidi di Ragno",
+                    text: "Per arrivare fino in fondo al vicolo, i raggi del sole devono scendere diritti rasente le pareti fredde, tenute discoste a forza d'arcate che traversano la striscia di cielo azzurro carico. Scendono diritti, i raggi del sole, giù per le finestre messe qua e là in disordine sui muri, e cespi di basilico e di origano piantati dentro pentole ai davanzali, e sottovesti stese appese a corde; fin giù al selciato, fatto a gradini e a ciottoli, con una cunetta in mezzo per l'orina dei muli. Basta un grido di Pin, un grido per incominciare una canzone, a naso all'aria sulla soglia della bottega, o un grido cacciato prima che la mano di Pietromagro il ciabattino gli sia scesa tra capo e collo per picchiarlo, perché dai davanzali nasca un'eco di richiami e d'insulti. - Pin! Già a quest'ora cominci ad angosciarci! Cantacene un po' una, Pin! Pin, meschinetto, cosa ti fanno? Pin, muso di macacco! Ti si seccasse la voce in gola, una volta! Tu e quel rubagalline del tuo padrone! Tu e quel materasso di tua sorella! Ma già Pin è in mezzo al carrugio, con le mani nelle tasche della giacca troppo da uomo per lui, che li guarda in faccia uno per uno senza ridere: - Di' Celestino, sta' un po' zitto, bel vestito nuovo che hai. E-di', quel furto di stoffa ai Moli Nuovi, poi, non si sa ancora chi sia stato? Be', che c'entra. Ciao Carolina, meno male quella volta. Si, quella volta meno male tuo marito che non ha guardato sotto il letto. Anche tu, Pasca, m'han detto che è successo proprio al tuo paese. Sì, che Garibaldi ci ha portato il sapone e i tuoi paesani se lo son mangiato. Mangiasapone, Pasca, mondoboia, lo sapete quanto costa il sapone? Pin ha una voce rauca da bambino vecchio: dice ogni battuta a bassa voce, serio, poi tutt'a un tratto sbotta in una risata in i che sembra un fischio e le lentiggini rosse e nere gli si affollano intorno agli occhi come un volo di vespe. A canzonare Pin c'è sempre da rimettere: conosce tutti i fatti del carrugio e non si sa mai cosa va a tirar fuori. Mattina e sera sotto le finestre a sgolarsi in canzoni e in gridi, mentre nella bottega di Pietromagro la montagna di scarpe sfondate tra poco seppellisce il deschetto e trabocca in istrada. - Pin! Macacco! Muso brutto! - gli grida qualche donna. - Mi risuolassi quelle ciabatte invece di starci ad angosciare tutto il giorno! È un mese che le avete lì nel mucchio. Lo dirò un po' io al tuo padrone, quando lo metteranno fuori! Pietromagro passa metà dell'anno in prigione, perché è nato disgraziato e quando c'è un furto nei dintorni finiscono sempre per mettere dentro lui. Torna e vede la montagna di scarpe sfondate e la bottega aperta senza dentro nessuno. Allora si siede al deschetto, piglia una scarpa, la gira, la rigira, la ributta nel mucchio; poi si prende la faccia pelosa tra le mani ossute, e sacramenta. Pin arriva fischiando e ancora non sa niente: ed ecco che si trova davanti Pietromagro con quelle mani già alte nell'aria e quelle pupille incorniciate di giallo e quella faccia nera di barba corta come pelo di cane. Grida, ma Pietromagro l'ha acciuffato e non lo molla; quando è stanco di picchiarlo lo lascia in bottega e s'infila all'osteria. Per quel giorno nessuno lo rivede. La sera, ogni due giorni, dalla sorella di Pin viene il marinaio tedesco. Pin lo aspetta nel carrugio ogni volta mentre sale, per chiedergli una sigaretta; i primi tempi era generoso e ne regalava anche tre, quattro per volta. Prendere in giro il marinaio tedesco è facile perché lui non capisce e guarda con quella faccia quagliata, senza contorno, rasa fin sulle tempie. Poi, quando se n'è andato, gli si possono fare gli sberleffi dietro, sicuri che non si volta; è ridicolo visto di dietro, con quei due nastri neri che gli scendono dal berretto marinaio fino al sedere lasciato scoperto dal giubbetto corto, un sedere carnoso, da donna, con una grossa pistola tedesca poggiata sopra. - Ruffiano... Ruffiano... - dice la gente a Pin dalle finestre, sottovoce perché con quei tipi è meglio non scherzare. - Cornuti... Cornuti... - risponde Pin facendo loro il verso e ingozzandosi di fumo gola e naso, fumo ancora aspro e ruvido contro la sua gola di bambino, ma di cui bisogna ingozzarsi fino a farsi lagrimare gli occhi e tossire con rabbia, non si sa bene il perché. Poi, con la sigaretta in bocca, andare all'osteria e dire: - Mondoboia, chi mi paga un bicchiere gli dico una cosa che poi mi dice grazie. All'osteria ci sono sempre gli stessi, tutt'il giorno, da anni, a gomiti sui tavoli e menti sui pugni che guardano le mosche sull'incerato e l'ombra viola in fondo ai bicchieri. - Che c'è, - dice Miscèl il Francese. - Tua sorella ha ribassato i prezzi? Gli altri ridono e picchiano pugni sullo zinco. - Te la sei presa questa volta, Pin, la risposta! Pin è li che lo guarda di sotto in su attraverso la frangia di capelli spinosi che gli mangia la fronte. - Mondoboia, proprio come pensavo io. Guardate un poco, pensa sempre a mia sorella. Vi dico, non smette mai di pensarci: s'è innamorato. Di mia sorella s'è innamorato, che coraggio... Gli altri ridono a gola spiegata e lo scappellottano e gli versano un bicchiere. Il vino non piace a Pin: è aspro contro la gola e arriccia la pelle e mette addosso una smania di ridere, gridare ed essere cattivi. Pure lo beve, tracanna bicchieri tutto d'un fiato come inghiotte fumo, come alla notte spia con schifo la sorella sul letto insieme a uomini nudi, e il vederla è come una carezza ruvida, sotto la pelle, un gusto aspro, come tutte le cose degli uomini; fumo, vino, donne. - Canta, Pin, - gli dicono. Pin canta bene, serio, impettito, con quella voce di bambino rauco. Canta Le quattro stagioni."
                 }
             ];
 
@@ -677,7 +763,11 @@
                         {isReading && (
                             <div className={`bg-gray-900 p-8 rounded-lg mb-6 min-h-[200px] flex items-center justify-${alignment === 'left' ? 'start' : alignment === 'right' ? 'end' : 'center'}`}>
                                 <div className={`word-display ${alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center'}`}>
-                                    <span dangerouslySetInnerHTML={{ __html: applyFixation(currentWord) }} />
+                                    {currentWord ? (
+                                        <span dangerouslySetInnerHTML={{ __html: applyFixation(currentWord) }} />
+                                    ) : (
+                                        <span>Loading...</span>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -712,9 +802,9 @@
                                         Duration = (word length × {wordDuration/5}ms) + punctuation pause
                                     </div>
                                 </div>
-                            </div>
-                            
-                            {isReading && (
+                                </div>
+                                
+                                {isReading && (
                                 <div className="flex flex-wrap gap-2 justify-center">
                                     <button
                                         onClick={handleRewindPhrase}
@@ -728,14 +818,14 @@
                                     >
                                         ⏪ Rewind 5 Words
                                     </button>
-                                    <button
-                                        onClick={handleNextSentence}
-                                        className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded transition-colors"
-                                    >
+                                        <button
+                                            onClick={handleNextSentence}
+                                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                                        >
                                         ⏭️ Next Sentence
-                                    </button>
-                                </div>
-                            )}
+                                        </button>
+                                    </div>
+                                )}
                         </div>
 
                         {/* Chat Input */}
@@ -790,7 +880,12 @@
             );
         }
 
-        ReactDOM.render(<SpeedReadingChat />, document.getElementById('root'));
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(
+            <ErrorBoundary>
+                <SpeedReadingChat />
+            </ErrorBoundary>
+        );
     </script>
 </body>
 </html> 
