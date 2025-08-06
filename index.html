@@ -8,26 +8,17 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preload" href="https://github.com/Born2Root/Fast-Font/raw/main/Fast_Sans.ttf" as="font" type="font/ttf" crossorigin>
     <style>
-        @font-face {
-            font-family: 'Fast Sans';
-            src: url('https://github.com/Born2Root/Fast-Font/raw/main/Fast_Sans.ttf') format('truetype');
-            font-display: swap;
-            font-weight: normal;
-            font-style: normal;
-        }
-        
-        .fast-font {
-            font-family: 'Fast Sans', 'Arial', sans-serif !important;
-            font-feature-settings: "calt" 1;
-            font-weight: normal;
-            font-style: normal;
-        }
         
         .word-display {
             font-size: 2.5rem;
             line-height: 1.2;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        .word-display strong {
+            font-weight: 900;
+            color: #ffffff;
         }
         
         @media (max-width: 768px) {
@@ -167,8 +158,49 @@
                 const baseDuration = 200;
                 const extraDuration = Math.max(0, word.length - 3) * 50;
                 const calculatedDuration = baseDuration + extraDuration;
-                // Use the slider value as a multiplier
-                return Math.max(calculatedDuration, wordDuration);
+                
+                // Add extra pause for punctuation
+                let punctuationPause = 0;
+                if (word.match(/[.!?;,:'"()]/)) {
+                    punctuationPause = 300; // 300ms extra for punctuation
+                } else if (word.match(/[,;]/)) {
+                    punctuationPause = 150; // 150ms extra for commas and semicolons
+                }
+                
+                return Math.max(calculatedDuration + punctuationPause, wordDuration);
+            };
+
+            const applyFixation = (word) => {
+                const length = word.length;
+                let boldCount = 0;
+                
+                if (length <= 3) {
+                    boldCount = 1;
+                } else if (length === 4) {
+                    boldCount = 2;
+                } else {
+                    boldCount = Math.ceil(length * 0.4); // 40% of letters
+                }
+                
+                // Calculate which letters to bold (center-weighted)
+                const startIndex = Math.floor((length - boldCount) / 2);
+                const boldIndices = [];
+                
+                for (let i = 0; i < boldCount; i++) {
+                    boldIndices.push(startIndex + i);
+                }
+                
+                // Apply bold formatting
+                let result = '';
+                for (let i = 0; i < length; i++) {
+                    if (boldIndices.includes(i)) {
+                        result += `<strong>${word[i]}</strong>`;
+                    } else {
+                        result += word[i];
+                    }
+                }
+                
+                return result;
             };
 
             const displayNextWord = () => {
@@ -235,21 +267,8 @@
                     addDebugLog(`Started reading Dante's Inferno - ${sentences.length} sentences`, 'success');
                 };
 
-                // Check if font is loaded
-                const checkFontLoaded = () => {
-                    if (document.fonts && document.fonts.check) {
-                        const fontLoaded = document.fonts.check('1em "Fast Sans"');
-                        if (fontLoaded) {
-                            addDebugLog('Fast Sans font loaded successfully', 'success');
-                        } else {
-                            addDebugLog('Fast Sans font not loaded, using fallback', 'warning');
-                        }
-                    }
-                };
-
-                // Start reading after font check and component mount
+                // Start reading after component mount
                 const timer = setTimeout(() => {
-                    checkFontLoaded();
                     startDanteReading();
                 }, 1000);
                 return () => clearTimeout(timer);
@@ -646,8 +665,8 @@
                         {/* Word Display Area */}
                         {isReading && (
                             <div className={`bg-gray-900 p-8 rounded-lg mb-6 min-h-[200px] flex items-center justify-${alignment === 'left' ? 'start' : alignment === 'right' ? 'end' : 'center'}`}>
-                                <div className={`fast-font word-display ${alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center'}`}>
-                                    {currentWord}
+                                <div className={`word-display ${alignment === 'left' ? 'text-left' : alignment === 'right' ? 'text-right' : 'text-center'}`}>
+                                    <span dangerouslySetInnerHTML={{ __html: applyFixation(currentWord) }} />
                                 </div>
                             </div>
                         )}
