@@ -17,8 +17,9 @@
         }
         
         .word-display strong {
-            font-weight: 900;
-            color: #ffffff;
+            font-weight: 900 !important;
+            color: #ffff00 !important;
+            text-shadow: 0 0 5px #ffff00;
         }
         
         @media (max-width: 768px) {
@@ -155,19 +156,23 @@
             };
 
             const calculateWordDuration = (word) => {
-                const baseDuration = 200;
-                const extraDuration = Math.max(0, word.length - 3) * 50;
-                const calculatedDuration = baseDuration + extraDuration;
+                // Base duration per character (from slider)
+                const baseDurationPerChar = wordDuration / 5; // Normalize to 5 characters
+                
+                // Calculate duration based on word length
+                let duration = word.length * baseDurationPerChar;
                 
                 // Add extra pause for punctuation
                 let punctuationPause = 0;
-                if (word.match(/[.!?;,:'"()]/)) {
-                    punctuationPause = 300; // 300ms extra for punctuation
+                if (word.match(/[.!?]/)) {
+                    punctuationPause = 500; // 500ms extra for sentence endings
                 } else if (word.match(/[,;]/)) {
-                    punctuationPause = 150; // 150ms extra for commas and semicolons
+                    punctuationPause = 300; // 300ms extra for commas and semicolons
+                } else if (word.match(/[:'"()]/)) {
+                    punctuationPause = 200; // 200ms extra for other punctuation
                 }
                 
-                return Math.max(calculatedDuration + punctuationPause, wordDuration);
+                return duration + punctuationPause;
             };
 
             const applyFixation = (word) => {
@@ -200,6 +205,9 @@
                     }
                 }
                 
+                // Debug logging
+                addDebugLog(`Fixation: "${word}" -> ${boldCount} bold letters at positions ${boldIndices.join(',')}`, 'info');
+                
                 return result;
             };
 
@@ -212,6 +220,9 @@
                         const word = words[wordIndex];
                         setCurrentWord(word);
                         const duration = calculateWordDuration(word);
+                        
+                        // Debug logging
+                        addDebugLog(`Word: "${word}" (${word.length} chars) - Duration: ${duration}ms`, 'info');
                         
                         wordTimeoutRef.current = setTimeout(() => {
                             setWordIndex(prev => prev + 1);
@@ -688,7 +699,7 @@
                                 </div>
                                 
                                 <div>
-                                    <label className="block text-sm font-medium mb-2">Word Duration: {wordDuration}ms</label>
+                                    <label className="block text-sm font-medium mb-2">Base Speed: {wordDuration}ms (per 5 chars)</label>
                                     <input
                                         type="range"
                                         min="100"
@@ -697,6 +708,9 @@
                                         onChange={(e) => setWordDuration(parseInt(e.target.value))}
                                         className="w-full"
                                     />
+                                    <div className="text-xs text-gray-400 mt-1">
+                                        Duration = (word length × {wordDuration/5}ms) + punctuation pause
+                                    </div>
                                 </div>
                             </div>
                             
