@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Speed Reading Chat - Gemini LLM</title>
+    <title>Speed Reading Chat - Dante's Inferno (v2)</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -166,17 +166,33 @@
             };
 
             const displayNextWord = () => {
-                if (wordIndex < currentSentence.length) {
-                    const word = currentSentence[wordIndex];
-                    setCurrentWord(word);
-                    const duration = calculateWordDuration(word);
+                if (currentSentence.length > 0 && sentenceIndex < currentSentence.length) {
+                    const currentSentenceText = currentSentence[sentenceIndex];
+                    const words = currentSentenceText.split(/\s+/).filter(word => word.trim());
                     
-                    wordTimeoutRef.current = setTimeout(() => {
-                        setWordIndex(prev => prev + 1);
-                    }, duration);
+                    if (wordIndex < words.length) {
+                        const word = words[wordIndex];
+                        setCurrentWord(word);
+                        const duration = calculateWordDuration(word);
+                        
+                        wordTimeoutRef.current = setTimeout(() => {
+                            setWordIndex(prev => prev + 1);
+                        }, duration);
+                    } else {
+                        // Move to next sentence
+                        setSentenceIndex(prev => prev + 1);
+                        setWordIndex(0);
+                        if (sentenceIndex + 1 >= currentSentence.length) {
+                            setIsReading(false);
+                            setCurrentWord('');
+                            setSentenceIndex(0);
+                            setWordIndex(0);
+                        }
+                    }
                 } else {
                     setIsReading(false);
                     setCurrentWord('');
+                    setSentenceIndex(0);
                     setWordIndex(0);
                 }
             };
@@ -191,7 +207,7 @@
                         clearTimeout(wordTimeoutRef.current);
                     }
                 };
-            }, [isReading, wordIndex, currentSentence, wordDuration]);
+            }, [isReading, wordIndex, sentenceIndex, currentSentence, wordDuration]);
 
             useEffect(() => {
                 if (chatContainerRef.current) {
