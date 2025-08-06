@@ -14,11 +14,15 @@
             font-family: 'Fast Sans';
             src: url('https://github.com/Born2Root/Fast-Font/raw/main/Fast_Sans.ttf') format('truetype');
             font-display: swap;
+            font-weight: normal;
+            font-style: normal;
         }
         
         .fast-font {
-            font-family: 'Fast Sans', sans-serif;
+            font-family: 'Fast Sans', 'Arial', sans-serif !important;
             font-feature-settings: "calt" 1;
+            font-weight: normal;
+            font-style: normal;
         }
         
         .word-display {
@@ -162,7 +166,9 @@
             const calculateWordDuration = (word) => {
                 const baseDuration = 200;
                 const extraDuration = Math.max(0, word.length - 3) * 50;
-                return Math.min(Math.max(baseDuration + extraDuration, wordDuration), 1000);
+                const calculatedDuration = baseDuration + extraDuration;
+                // Use the slider value as a multiplier
+                return Math.max(calculatedDuration, wordDuration);
             };
 
             const displayNextWord = () => {
@@ -229,8 +235,23 @@
                     addDebugLog(`Started reading Dante's Inferno - ${sentences.length} sentences`, 'success');
                 };
 
-                // Start reading after a short delay to ensure component is mounted
-                const timer = setTimeout(startDanteReading, 1000);
+                // Check if font is loaded
+                const checkFontLoaded = () => {
+                    if (document.fonts && document.fonts.check) {
+                        const fontLoaded = document.fonts.check('1em "Fast Sans"');
+                        if (fontLoaded) {
+                            addDebugLog('Fast Sans font loaded successfully', 'success');
+                        } else {
+                            addDebugLog('Fast Sans font not loaded, using fallback', 'warning');
+                        }
+                    }
+                };
+
+                // Start reading after font check and component mount
+                const timer = setTimeout(() => {
+                    checkFontLoaded();
+                    startDanteReading();
+                }, 1000);
                 return () => clearTimeout(timer);
             }, []);
 
@@ -351,6 +372,20 @@
                     setIsReading(false);
                     addDebugLog('Finished reading all sentences', 'info');
                 }
+            };
+
+            const handleRewindPhrase = () => {
+                setSentenceIndex(0);
+                setWordIndex(0);
+                setIsReading(true);
+                addDebugLog('Rewound to beginning of phrase', 'info');
+            };
+
+            const handleRewindWords = () => {
+                const newWordIndex = Math.max(0, wordIndex - 5);
+                setWordIndex(newWordIndex);
+                setIsReading(true);
+                addDebugLog(`Rewound 5 words to word ${newWordIndex}`, 'info');
             };
 
             const handleKeyPress = (e) => {
@@ -619,7 +654,7 @@
 
                         {/* Controls */}
                         <div className="bg-gray-900 p-4 rounded-lg mb-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                                 <div>
                                     <label className="block text-sm font-medium mb-2">Text Alignment</label>
                                     <select
@@ -644,18 +679,30 @@
                                         className="w-full"
                                     />
                                 </div>
-                                
-                                {isReading && (
-                                    <div className="flex items-end">
-                                        <button
-                                            onClick={handleNextSentence}
-                                            className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded transition-colors"
-                                        >
-                                            Next Sentence
-                                        </button>
-                                    </div>
-                                )}
                             </div>
+                            
+                            {isReading && (
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    <button
+                                        onClick={handleRewindPhrase}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                                    >
+                                        ⏮️ Rewind Phrase
+                                    </button>
+                                    <button
+                                        onClick={handleRewindWords}
+                                        className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                                    >
+                                        ⏪ Rewind 5 Words
+                                    </button>
+                                    <button
+                                        onClick={handleNextSentence}
+                                        className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+                                    >
+                                        ⏭️ Next Sentence
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Chat Input */}
